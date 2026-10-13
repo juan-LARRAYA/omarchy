@@ -354,7 +354,13 @@ Panel {
   }
 
   function runQueuedTextSize() {
-    if (queuedTextSize <= 0) return
+    if (queuedTextSize <= 0) {
+      // Last command done: if the live size already matches the pending stop,
+      // no base-size change will come to clear it.
+      if (textSizePreviewIndex >= 0 && nearestTextStop(Style.font.baseSize) === textSizePreviewIndex)
+        textSizePreviewIndex = -1
+      return
+    }
     var px = queuedTextSize
     queuedTextSize = 0
     setTextSize(px)

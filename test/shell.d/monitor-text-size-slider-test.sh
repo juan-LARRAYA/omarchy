@@ -79,4 +79,17 @@ assertDeepEqual(r.started, ['16', '20'], '20px runs when the 16px command exits'
 r.textScaleProc.finish()
 assertEqual(r.queuedTextSize, 0, 'the queue is empty after the last command')
 assertEqual(r.textSizePreviewIndex, 6, 'the final pending stop is the 20px one, cleared by the base-size handler once it lands')
+
+// 16 -> 20 -> 16 while running: the first command already wrote 16px, so the
+// queued 16px run changes nothing and the pending stop must still clear.
+r = make(12)
+r.select(5)
+r.Style.font.baseSize = 16
+r.select(6)
+r.select(5)
+assertDeepEqual(r.started, ['16'], 'only the first command runs while it is active')
+r.textScaleProc.finish()
+assertDeepEqual(r.started, ['16', '16'], 'the last selection runs after the first exits')
+r.textScaleProc.finish()
+assertEqual(r.textSizePreviewIndex, -1, 'the pending stop clears when the live size already matches')
 JS
