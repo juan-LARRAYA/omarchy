@@ -151,8 +151,8 @@ Item {
 
     // The window went because its output did (a monitor link flapping during
     // the blank). That is not the user, and waking here would undo the blank.
-    if ((Quickshell.screens || []).length === 0) {
-      logEvent("screensaver-closed-no-outputs")
+    if (outputsLost()) {
+      holdForOutputLoss("screensaver-closed-with-output")
       return
     }
 
@@ -160,6 +160,19 @@ Item {
     // as activity and cancel the pending lock; the lock timer is only allowed
     // to fire while the screensaver remains up.
     root.cancelIdleCycle("screensaver-dismissed")
+  }
+
+  // Screens the compositor can show something on: not Hyprland's FALLBACK
+  // placeholder and not a screen without a valid output behind it.
+  property var outputScreens: Quickshell.screens
+
+  function outputsLost() {
+    return outputLossTimer.running || !IdleModel.hasRealScreen(root.outputScreens)
+  }
+
+  function holdForOutputLoss(reason) {
+    logEvent("output-loss", reason)
+    outputLossTimer.restart()
   }
 
   function eventParts(event, count) {
@@ -171,6 +184,9 @@ Item {
     if (name === "openwindow") {
       var open = eventParts(event, 4)
       if (String(open[2] || "") === root.screensaverClass) root.handleScreensaverWindowOpened(open[0])
+    } else if (name === "monitorremoved") {
+      var removed = String(eventParts(event, 1)[0] || "")
+      if (root.idledThisCycle && removed !== "FALLBACK") root.holdForOutputLoss("monitorremoved " + removed)
     } else if (name === "closewindow") {
       var close = eventParts(event, 1)
       var address = String(close[0] || "")
@@ -180,6 +196,14 @@ Item {
 
   function handleActiveSignal() {
     if (!root.idledThisCycle) return
+
+    // Without an output to show anything on, the compositor's own re-check
+    // (a window closing with its output) is the only thing that can report
+    // activity. It is not the user, and waking would undo the blank.
+    if (outputsLost()) {
+      logEvent("idle-monitor-active", "ignored while outputs are lost")
+      return
+    }
 
     // Starting the screensaver can make the compositor report activity. Keep
     // the lock timer running once the screensaver exists (or during its short
@@ -292,6 +316,14 @@ Item {
     id: lockTimer
     repeat: false
     onTriggered: if (root.idleEnabled && root.idledThisCycle && root.lockEnabled) root.lockSystem("lock-timeout")
+  }
+
+  // The screen list and the compositor's resumed signal can lag the monitor
+  // removal, so the loss is held for a moment past the event that reports it.
+  Timer {
+    id: outputLossTimer
+    interval: 3000
+    repeat: false
   }
 
   Timer {
