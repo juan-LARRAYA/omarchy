@@ -41,7 +41,8 @@ while true; do
     --random-effect --no-eol --no-restore-cursor &
 
   while pgrep -t "${tty#/dev/}" -x ttfx >/dev/null; do
-    if read -n1 -t 1 || ! screensaver_in_focus; then
+    # While the launcher is still stepping through monitors, focus is expected to be elsewhere.
+    if read -n1 -t 1 || { [[ ! -e $XDG_RUNTIME_DIR/omarchy-screensaver-launching ]] && ! screensaver_in_focus; }; then
       exit_screensaver
     fi
   done
