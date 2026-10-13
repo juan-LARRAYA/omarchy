@@ -128,7 +128,7 @@ assert(/inputPeakNode: inputViaWpctl \? null : source/.test(panel) && /inputLeve
 for (const name of ['audio', 'monitor']) {
   const qml = read('shell/plugins/panels/' + name + '/Panel.qml')
   assert(/ScrollBar\.vertical\.policy: panelColumn\.implicitHeight > height \? ScrollBar\.AlwaysOn : ScrollBar\.AlwaysOff/.test(qml) &&
-    /width: scrollArea\.availableWidth - \(scrollArea\.ScrollBar\.vertical\.policy === ScrollBar\.AlwaysOn/.test(qml),
+    /width: scrollArea\.availableWidth - \(scrollArea\.ScrollBar\.vertical\.policy === ScrollBar\.AlwaysOn \? scrollArea\.ScrollBar\.vertical\.width : 0\)/.test(qml),
     'the ' + name + ' panel shows its scrollbar while it overflows and keeps rows clear of it')
 }
 assert(!/Timer \{[^}]*repeat: true[^}]*resolveVolumeSink/.test(panel), 'no timer polls the volume sink')
