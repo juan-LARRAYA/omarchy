@@ -12,7 +12,7 @@ list_bindings() {
   local home="$1"
   local epilogue="${2:-}"
 
-  HOME="$home" XDG_CONFIG_HOME="$home/.config" XDG_STATE_HOME="$home/.local/state" OMARCHY_PATH="$ROOT" OMARCHY_BINDING_EPILOGUE="$epilogue" lua <<'LUA'
+  HOME="$home" XDG_CONFIG_HOME="$home/.config" XDG_STATE_HOME="$home/.local/state" OMARCHY_PATH="$ROOT" OMARCHY_BINDING_EPILOGUE="$epilogue" lua - <<'LUA'
 package.path = os.getenv("HOME") .. "/.config/?.lua;" .. os.getenv("OMARCHY_PATH") .. "/?.lua;" .. package.path
 
 local function proxy()
@@ -215,9 +215,10 @@ rebound=$(PATH="$stub_bin:$PATH" list_bindings "$home" \
   fail "rebinding replaces all bindings for a key and preserves binding options" "$rebound"
 pass "rebinding replaces all bindings for a key and preserves binding options"
 
-empty=$(PATH="$stub_bin:$PATH" list_bindings "$home" \
-  'o.rebind("SUPER + SHIFT + F", "Disabled", "")' | \
-  awk -F'\t' '$1 == "SHIFT+SUPER+F"')
+empty_all=$(PATH="$stub_bin:$PATH" list_bindings "$home" \
+  'o.rebind("SUPER + SHIFT + F", "Disabled", "")') ||
+  fail "binding an empty command does not raise a Lua error" "$empty_all"
+empty=$(awk -F'\t' '$1 == "SHIFT+SUPER+F"' <<<"$empty_all")
 [[ -z $empty ]] ||
   fail "an empty command disables the binding instead of binding an empty exec_cmd" "$empty"
 pass "an empty command disables the binding instead of binding an empty exec_cmd"
