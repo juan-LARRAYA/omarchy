@@ -24,3 +24,11 @@ assert(!tray.ownedByOmarchy({ id: 'dropbox' }, { left: [], center: [], right: []
 assert(tray.ownedByOmarchy({ id: 'qlBCprNUqU', title: 'localsend' }, { left: [], center: [], right: [] }), 'tray suppresses localsend regardless of layout')
 assert(!tray.ownedByOmarchy({ id: 'nextcloud' }, layout), 'tray keeps unrelated tray items')
 JS
+
+run_node_test "tray icon layer stays enabled" <<'JS'
+const fs = require('fs')
+const src = fs.readFileSync(path.join(root, 'shell/plugins/bar/widgets/Tray.qml'), 'utf8')
+const image = src.match(/Image \{\s*id: trayIconImage[\s\S]*?\n    \}/)
+assert(image, 'tray icon image block exists')
+assert(/layer\.enabled: true\b/.test(image[0]), 'tray icon layer stays enabled so the tinted effect survives an attention-icon cycle')
+JS
