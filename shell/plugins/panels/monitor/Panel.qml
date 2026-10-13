@@ -722,7 +722,11 @@ Panel {
                 integer: true
                 tickCount: root.textSizeStops.length
                 value: root.currentTextIndex()
-                onReleased: function(v) { root.setTextSize(root.textSizeStops[Math.round(v)]) }
+                onReleased: function(v) {
+                  // Same path as the keyboard: hold the pending stop so the knob doesn't snap back
+                  var delta = Math.round(v) - root.currentTextIndex()
+                  if (delta !== 0) root.adjustTextSize(delta)
+                }
               }
 
               HoverHandler {
