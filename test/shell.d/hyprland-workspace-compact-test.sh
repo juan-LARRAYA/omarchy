@@ -19,8 +19,6 @@ cat >"$mock_bin/hyprctl" <<'SH'
 printf '%s\n' "$*" >>"$HYPRCTL_LOG"
 case "$1 $2" in
   "workspaces -j") cat "$FIXTURES/workspaces.json" ;;
-  "clients -j") cat "$FIXTURES/clients.json" ;;
-  "monitors -j") cat "$FIXTURES/monitors.json" ;;
   "--batch "*) ;;
   *) exit 1 ;;
 esac
@@ -30,12 +28,6 @@ chmod +x "$mock_bin/hyprctl"
 set_workspaces() {
   cat >"$fixtures/workspaces.json"
 }
-set_clients() {
-  cat >"$fixtures/clients.json"
-}
-set_monitors() {
-  cat >"$fixtures/monitors.json"
-}
 reset_log() {
   : >"$log_file"
 }
@@ -44,11 +36,12 @@ run_compact() {
     "$ROOT/bin/omarchy-hyprland-workspace-compact" "$@"
 }
 
-# Two monitors, each with gaps in its split-monitor-workspaces range. The
-# scratchpad (negative id) is ignored, workspace 3 stays put, and the low
-# workspaces 1/2 plus 8 are reserved: persistent workspaces are never moved and
-# their numbers are never reassigned.
-set_workspaces <<'EOF'
+# Two monitors, each with gaps. Workspace numbers are global, so workspaces are
+# renumbered in place with change_id (monitor, windows and visibility are kept)
+# and never onto a number that already exists on another monitor. The scratchpad
+# (negative id) is ignored, workspace 3 stays put, and persistent workspaces
+# 1/2/8 are never moved and their numbers never reassigned.
+set_workspaces <<'EOF2'
 [
   {"id":1,"name":"1","monitor":"eDP-1","windows":1,"ispersistent":true},
   {"id":2,"name":"2","monitor":"eDP-1","windows":0,"ispersistent":true},
@@ -60,50 +53,18 @@ set_workspaces <<'EOF'
   {"id":18,"name":"18","monitor":"DVI-D-1","windows":1,"ispersistent":false},
   {"id":-99,"name":"special:scratchpad","monitor":"eDP-1","windows":2,"ispersistent":false}
 ]
-EOF
-set_clients <<'EOF'
-[
-  {"address":"0x1","workspace":{"id":1}},
-  {"address":"0x3a","workspace":{"id":3}},
-  {"address":"0x3b","workspace":{"id":3}},
-  {"address":"0x7","workspace":{"id":7}},
-  {"address":"0x12","workspace":{"id":12}},
-  {"address":"0x17","workspace":{"id":17}},
-  {"address":"0x18","workspace":{"id":18}},
-  {"address":"0x99","workspace":{"id":-99}}
-]
-EOF
-set_monitors <<'EOF'
-[
-  {"name":"eDP-1","focused":true,"activeWorkspace":{"id":7}},
-  {"name":"DVI-D-1","focused":false,"activeWorkspace":{"id":12}}
-]
-EOF
+EOF2
 reset_log
 run_compact
 
 mapfile -t calls <"$log_file"
-[[ ${#calls[@]} == 4 ]] || fail "workspace compaction uses three reads and one dispatch batch" "${calls[*]}"
+[[ ${#calls[@]} == 2 ]] || fail "workspace compaction uses one read and one dispatch batch" "${calls[*]}"
 [[ ${calls[0]} == "workspaces -j" ]] || fail "workspace compaction reads workspaces once" "${calls[0]}"
-[[ ${calls[1]} == "clients -j" ]] || fail "workspace compaction reads clients once" "${calls[1]}"
-[[ ${calls[2]} == "monitors -j" ]] || fail "workspace compaction reads monitors once" "${calls[2]}"
-
-batch=${calls[3]}
-[[ $batch == "--batch "* ]] || fail "workspace compaction sends one dispatch batch" "$batch"
-[[ $batch == *'address:0x17"'* ]] || fail "workspace compaction moves a gapped second-monitor workspace"
-[[ $batch == *'address:0x18"'* ]] || fail "workspace compaction moves later second-monitor workspaces"
-[[ $batch == *'address:0x7"'* ]] || fail "workspace compaction moves a gapped first-monitor workspace"
-[[ $batch != *'address:0x12"'* ]] || fail "workspace compaction keeps the lowest workspace of each range"
-[[ $batch != *'address:0x3a"'* && $batch != *'address:0x3b"'* ]] ||
-  fail "workspace compaction leaves already compact workspaces alone"
-[[ $batch != *'address:0x1"'* && $batch != *'address:0x2"'* ]] ||
-  fail "workspace compaction leaves reserved workspaces alone"
-[[ $batch != *'address:0x99"'* ]] || fail "workspace compaction ignores the scratchpad"
-[[ $batch == *'dispatch hl.dsp.focus({ workspace = "4" })' ]] ||
-  fail "workspace compaction follows the renumbered focused workspace"
-[[ ${batch##*;} == 'dispatch hl.dsp.focus({ workspace = "4" })' ]] ||
-  fail "workspace compaction restores the focused workspace last" "$batch"
-pass "workspace compaction batches per-monitor moves and restores focus"
+expected='--batch dispatch hl.dsp.workspace.change_id({ workspace = "17", id = 13 });dispatch hl.dsp.workspace.change_id({ workspace = "18", id = 14 });dispatch hl.dsp.workspace.change_id({ workspace = "7", id = 4 })'
+[[ ${calls[1]} == "$expected" ]] || fail "workspace compaction renumbers each gapped workspace in place" "${calls[1]}"
+[[ ${calls[1]} != *'hl.dsp.focus'* && ${calls[1]} != *'window.move'* ]] ||
+  fail "workspace compaction neither moves windows nor changes focus" "${calls[1]}"
+pass "workspace compaction renumbers workspaces in place with one batch"
 
 # Dry run prints the same plan without touching the compositor.
 reset_log
@@ -124,45 +85,63 @@ set_workspaces <<'EOF'
   {"id":6,"name":"6","monitor":"eDP-1","windows":1,"ispersistent":false}
 ]
 EOF
-set_clients <<'EOF'
-[
-  {"address":"0x1","workspace":{"id":1}},
-  {"address":"0x2","workspace":{"id":2}},
-  {"address":"0x5","workspace":{"id":5}},
-  {"address":"0x6","workspace":{"id":6}}
-]
-EOF
-set_monitors <<'EOF'
-[
-  {"name":"eDP-1","focused":true,"activeWorkspace":{"id":5}}
-]
-EOF
 reset_log
 run_compact
 mapfile -t calls <"$log_file"
-mid_batch=${calls[3]}
-[[ $mid_batch == *'dispatch hl.dsp.window.move({ workspace = "3", follow = false, window = "address:0x5" })'* ]] ||
+mid_batch=${calls[1]}
+[[ $mid_batch == '--batch dispatch hl.dsp.workspace.change_id({ workspace = "5", id = 3 });dispatch hl.dsp.workspace.change_id({ workspace = "6", id = 5 })' ]] ||
   fail "workspace compaction packs around a persistent anchor" "$mid_batch"
-[[ $mid_batch == *'dispatch hl.dsp.window.move({ workspace = "5", follow = false, window = "address:0x6" })'* ]] ||
-  fail "workspace compaction skips the reserved number as a destination" "$mid_batch"
-[[ $mid_batch == *'dispatch hl.dsp.focus({ workspace = "3" })'* ]] ||
-  fail "workspace compaction follows the focused workspace past an anchor" "$mid_batch"
 pass "workspace compaction keeps persistent workspaces fixed"
 
-# A focused special workspace is never renumbered, so no focus command is
-# emitted; only the moves run.
-set_monitors <<'EOF'
+# A number that exists on another monitor is never a destination, even when it
+# is a gap in this monitor's own packing: 9 stays because 2 and 3 are taken
+# elsewhere, and 10 can only use the free 4.
+set_workspaces <<'EOF2'
 [
-  {"name":"eDP-1","focused":true,"activeWorkspace":{"id":-99}},
-  {"name":"DVI-D-1","focused":false,"activeWorkspace":{"id":12}}
+  {"id":1,"name":"1","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":9,"name":"9","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":10,"name":"10","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":2,"name":"2","monitor":"HDMI-A-1","windows":1,"ispersistent":false},
+  {"id":3,"name":"3","monitor":"HDMI-A-1","windows":0,"ispersistent":false}
 ]
-EOF
+EOF2
 reset_log
 run_compact
 mapfile -t calls <"$log_file"
-[[ ${calls[3]} == "--batch "* && ${calls[3]} != *'hl.dsp.focus'* ]] ||
-  fail "workspace compaction leaves focus on the scratchpad alone" "${calls[3]}"
-pass "workspace compaction does not steal focus from the scratchpad"
+[[ ${calls[1]} == '--batch dispatch hl.dsp.workspace.change_id({ workspace = "9", id = 4 });dispatch hl.dsp.workspace.change_id({ workspace = "10", id = 5 })' ]] ||
+  fail "workspace compaction never renumbers onto another monitor's number" "${calls[1]}"
+pass "workspace compaction treats workspace numbers as global"
+
+# A workspace that cannot move to a lower free number stays where it is.
+set_workspaces <<'EOF2'
+[
+  {"id":1,"name":"1","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":2,"name":"2","monitor":"HDMI-A-1","windows":1,"ispersistent":false},
+  {"id":3,"name":"3","monitor":"HDMI-A-1","windows":1,"ispersistent":false}
+]
+EOF2
+reset_log
+run_compact
+grep -q -- '--batch' "$log_file" && fail "workspace compaction sends no batch when nothing can move"
+pass "workspace compaction leaves unmovable workspaces alone"
+
+# Open scratchpads and focus are irrelevant: no focus is dispatched at all, so a
+# scratchpad shown over a renumbered workspace stays open and the focused
+# monitor does not change.
+set_workspaces <<'EOF2'
+[
+  {"id":1,"name":"1","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":5,"name":"5","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":-98,"name":"special:scratchpad","monitor":"eDP-1","windows":2,"ispersistent":false}
+]
+EOF2
+reset_log
+run_compact
+mapfile -t calls <"$log_file"
+[[ ${calls[1]} == '--batch dispatch hl.dsp.workspace.change_id({ workspace = "5", id = 2 })' ]] ||
+  fail "workspace compaction ignores special workspaces" "${calls[1]}"
+[[ ${calls[1]} != *'focus'* ]] || fail "workspace compaction never dispatches focus" "${calls[1]}"
+pass "workspace compaction does not touch focus or an open scratchpad"
 
 # An already compact state is a no-op: no batch is sent.
 set_workspaces <<'EOF'
@@ -171,21 +150,6 @@ set_workspaces <<'EOF'
   {"id":2,"name":"2","monitor":"eDP-1","windows":1,"ispersistent":false},
   {"id":3,"name":"3","monitor":"eDP-1","windows":1,"ispersistent":false},
   {"id":11,"name":"11","monitor":"DVI-D-1","windows":2,"ispersistent":false}
-]
-EOF
-set_clients <<'EOF'
-[
-  {"address":"0x1","workspace":{"id":1}},
-  {"address":"0x2","workspace":{"id":2}},
-  {"address":"0x3","workspace":{"id":3}},
-  {"address":"0x11a","workspace":{"id":11}},
-  {"address":"0x11b","workspace":{"id":11}}
-]
-EOF
-set_monitors <<'EOF'
-[
-  {"name":"eDP-1","focused":true,"activeWorkspace":{"id":3}},
-  {"name":"DVI-D-1","focused":false,"activeWorkspace":{"id":11}}
 ]
 EOF
 reset_log
