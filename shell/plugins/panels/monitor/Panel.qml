@@ -340,9 +340,24 @@ Panel {
     return textSizePreviewIndex >= 0 ? textSizeStops[textSizePreviewIndex] : Style.font.baseSize
   }
 
+  // A change made while the command is still running is queued (last one wins)
+  // and started when it exits; changing command mid-run would not start it.
+  property int queuedTextSize: 0
+
   function setTextSize(px) {
+    if (textScaleProc.running) {
+      queuedTextSize = px
+      return
+    }
     textScaleProc.command = ["omarchy-display-text-size", String(px)]
-    if (!textScaleProc.running) textScaleProc.running = true
+    textScaleProc.running = true
+  }
+
+  function runQueuedTextSize() {
+    if (queuedTextSize <= 0) return
+    var px = queuedTextSize
+    queuedTextSize = 0
+    setTextSize(px)
   }
 
   // Slider release: hold the chosen stop as pending (like the keyboard) so the
@@ -455,6 +470,7 @@ Panel {
   // nothing to refresh here.
   Process {
     id: textScaleProc
+    onRunningChanged: if (!running) root.runQueuedTextSize()
     stdout: StdioCollector { waitForEnd: true }
   }
 
