@@ -353,6 +353,13 @@ Panel {
     textScaleProc.running = true
   }
 
+  // A failed command changes nothing, so no base-size change will clear the
+  // pending stop: drop it so the knob shows the real size and a retry runs.
+  // (A successful exit leaves it for the base-size handler, which lands later.)
+  function textSizeCommandExited(exitCode) {
+    if (exitCode !== 0 && queuedTextSize <= 0) textSizePreviewIndex = -1
+  }
+
   function runQueuedTextSize() {
     if (queuedTextSize <= 0) {
       // Last command done: if the live size already matches the pending stop,
@@ -477,6 +484,7 @@ Panel {
   Process {
     id: textScaleProc
     onRunningChanged: if (!running) root.runQueuedTextSize()
+    onExited: function(exitCode) { root.textSizeCommandExited(exitCode) }
     stdout: StdioCollector { waitForEnd: true }
   }
 

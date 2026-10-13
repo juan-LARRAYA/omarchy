@@ -9,6 +9,7 @@ const fs = require('fs')
 const src = fs.readFileSync(path.join(root, 'shell/plugins/panels/monitor/Panel.qml'), 'utf8')
 
 assert(/id: textScaleProc\n    onRunningChanged: if \(!running\) root\.runQueuedTextSize\(\)/.test(src), 'text size command exit runs the queued change')
+assert(/onExited: function\(exitCode\) \{ root\.textSizeCommandExited\(exitCode\) \}/.test(src), 'text size command exit reports its exit code')
 assert(/onReleased: function\(v\) \{ root\.selectTextSize\(Math\.round\(v\)\) \}/.test(src), 'text size slider release goes through selectTextSize')
 
 function fn(name) {
@@ -38,14 +39,15 @@ function make(basePx, pending = -1) {
       if (v && !this._running) root.started.push(this.command[1])
       this._running = v
     },
-    finish() { this._running = false; root.runQueuedTextSize() }
+    finish(code = 0) { this._running = false; root.runQueuedTextSize(); root.textSizeCommandExited(code) }
   }
   root.textScaleProc = proc
-  const names = ['nearestTextStop', 'currentTextIndex', 'displayedTextPx', 'setTextSize', 'runQueuedTextSize', 'adjustTextSize', 'selectTextSize']
+  const names = ['nearestTextStop', 'currentTextIndex', 'displayedTextPx', 'setTextSize', 'runQueuedTextSize', 'textSizeCommandExited', 'adjustTextSize', 'selectTextSize']
   const body = names.map(fn).join('\n')
-  const fns = new Function('root', 'with (root) {' + body + '\nreturn { selectTextSize, runQueuedTextSize } }')(root)
+  const fns = new Function('root', 'with (root) {' + body + '\nreturn { selectTextSize, runQueuedTextSize, textSizeCommandExited } }')(root)
   root.select = fns.selectTextSize
   root.runQueuedTextSize = fns.runQueuedTextSize
+  root.textSizeCommandExited = fns.textSizeCommandExited
   return root
 }
 
@@ -92,4 +94,15 @@ r.textScaleProc.finish()
 assertDeepEqual(r.started, ['16', '16'], 'the last selection runs after the first exits')
 r.textScaleProc.finish()
 assertEqual(r.textSizePreviewIndex, -1, 'the pending stop clears when the live size already matches')
+
+// The command fails and the size stays 12: the pending stop must clear and the
+// same value must be selectable again.
+r = make(12)
+r.select(5)
+r.textScaleProc.finish(1)
+assertEqual(r.textSizePreviewIndex, -1, 'a failed command clears the pending stop')
+r.select(5)
+assertDeepEqual(r.started, ['16', '16'], 'retrying the same size runs the command again')
+r.textScaleProc.finish(0)
+assertEqual(r.textSizePreviewIndex, 5, 'a successful exit leaves the pending stop for the base-size handler')
 JS
