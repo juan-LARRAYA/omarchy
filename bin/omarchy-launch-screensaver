@@ -52,8 +52,11 @@ wait_for_screensaver_window() {
 
 # Moving focus on to the next monitor makes a foreign window active until its screensaver maps. Tell the
 # screensavers already running not to read that as the user clicking away, which would close them all.
+# The marker holds our pid, so it stops counting if we die without cleaning up.
 launching="$XDG_RUNTIME_DIR/omarchy-screensaver-launching"
-touch "$launching"
+trap 'rm -f "$launching"' EXIT
+trap exit INT TERM
+echo $$ >"$launching"
 
 while read -r m special; do
   hypr_focus_monitor "$m"
