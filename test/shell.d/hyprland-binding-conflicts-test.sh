@@ -214,3 +214,10 @@ rebound=$(PATH="$stub_bin:$PATH" list_bindings "$home" \
 [[ $rebound == $'F9 (release)\tF9\tDictation on release' ]] ||
   fail "rebinding replaces all bindings for a key and preserves binding options" "$rebound"
 pass "rebinding replaces all bindings for a key and preserves binding options"
+
+empty=$(PATH="$stub_bin:$PATH" list_bindings "$home" \
+  'o.rebind("SUPER + SHIFT + F", "Disabled", "")' | \
+  awk -F'\t' '$1 == "SHIFT+SUPER+F"')
+[[ -z $empty ]] ||
+  fail "an empty command disables the binding instead of binding an empty exec_cmd" "$empty"
+pass "an empty command disables the binding instead of binding an empty exec_cmd"
