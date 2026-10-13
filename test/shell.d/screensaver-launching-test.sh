@@ -49,9 +49,9 @@ printf '#!/bin/bash\necho foot.desktop\n' >"$tmpdir/bin/xdg-terminal-exec"
 chmod +x "$tmpdir/bin/"*
 
 run_watchdog() {
-  rm -f "$tmpdir/pkill"
+  rm -f "$tmpdir/pkill" "$tmpdir/stderr"
   # stdin stays open and silent, so the only way out is the focus check.
-  { sleep 4 | PATH="$tmpdir/bin:$PATH" TEST_DIR="$tmpdir" XDG_RUNTIME_DIR="$tmpdir" timeout -s KILL 2.5 "$ROOT/bin/omarchy-screensaver" >/dev/null 2>&1; } 2>/dev/null || true
+  { sleep 4 | PATH="$tmpdir/bin:$PATH" TEST_DIR="$tmpdir" XDG_RUNTIME_DIR="$tmpdir" timeout -s KILL 2.5 "$ROOT/bin/omarchy-screensaver" >/dev/null 2>"$tmpdir/stderr"; } 2>/dev/null || true
 }
 
 run_launcher() {
@@ -102,3 +102,5 @@ rm "$marker"
 run_watchdog
 [[ -e $tmpdir/pkill ]] || fail "a screensaver still closes when focus is lost after the launch" "no pkill"
 pass "a screensaver still closes when focus is lost after the launch"
+[[ ! -s $tmpdir/stderr ]] || fail "a missing marker prints nothing into the screensaver's terminal" "$(<"$tmpdir/stderr")"
+pass "a missing marker prints nothing into the screensaver's terminal"

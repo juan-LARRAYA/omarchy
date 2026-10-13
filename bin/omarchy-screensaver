@@ -5,7 +5,7 @@
 # The launcher keeps its pid here while it steps through monitors. A marker whose launcher is gone is ignored.
 launcher_running() {
   local pid
-  read -r pid <"$XDG_RUNTIME_DIR/omarchy-screensaver-launching" 2>/dev/null && kill -0 "$pid" 2>/dev/null
+  read -r pid 2>/dev/null <"$XDG_RUNTIME_DIR/omarchy-screensaver-launching" && kill -0 "$pid" 2>/dev/null
 }
 
 screensaver_in_focus() {
