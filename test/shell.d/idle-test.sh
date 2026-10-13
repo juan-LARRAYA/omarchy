@@ -56,6 +56,11 @@ assert(
   'idle ends a running cycle when both timeouts are set to 0'
 )
 
+assert(
+  /function handleScreensaverWindowClosed[\s\S]*?Quickshell\.screens \|\| \[\]\)\.length === 0\) \{[^}]*return\s*\}[\s\S]*?cancelIdleCycle\("screensaver-dismissed"\)/.test(serviceSource),
+  'idle does not treat a screensaver closed by losing every output as a dismissal'
+)
+
 assertDeepEqual(idle.eventParts({ data: 'a,b,c' }, 2), ['a', 'b', 'c'], 'idle parses raw event data')
 assertDeepEqual(
   idle.eventParts({ parse: function(count) { return ['parsed', count] } }, 4),

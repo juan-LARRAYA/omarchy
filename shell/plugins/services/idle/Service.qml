@@ -149,6 +149,13 @@ Item {
     if (!root.idleEnabled || !root.idledThisCycle || !root.screensaverStartedThisCycle) return
     if (root.screensaverWindowCount > 0) return
 
+    // The window went because its output did (a monitor link flapping during
+    // the blank). That is not the user, and waking here would undo the blank.
+    if ((Quickshell.screens || []).length === 0) {
+      logEvent("screensaver-closed-no-outputs")
+      return
+    }
+
     // The user dismissed the screensaver before the lock deadline. Treat that
     // as activity and cancel the pending lock; the lock timer is only allowed
     // to fire while the screensaver remains up.
