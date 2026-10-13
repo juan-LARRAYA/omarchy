@@ -345,6 +345,13 @@ Panel {
     if (!textScaleProc.running) textScaleProc.running = true
   }
 
+  // Slider release: hold the chosen stop as pending (like the keyboard) so the
+  // knob doesn't snap back. Skip only when that size is already in effect.
+  function selectTextSize(idx) {
+    if (textSizeStops[idx] === displayedTextPx()) return
+    adjustTextSize(idx - currentTextIndex())
+  }
+
   function adjustTextSize(deltaSteps) {
     var idx = currentTextIndex() + deltaSteps
     if (idx < 0) idx = 0
@@ -722,11 +729,7 @@ Panel {
                 integer: true
                 tickCount: root.textSizeStops.length
                 value: root.currentTextIndex()
-                onReleased: function(v) {
-                  // Same path as the keyboard: hold the pending stop so the knob doesn't snap back
-                  var delta = Math.round(v) - root.currentTextIndex()
-                  if (delta !== 0) root.adjustTextSize(delta)
-                }
+                onReleased: function(v) { root.selectTextSize(Math.round(v)) }
               }
 
               HoverHandler {
