@@ -6,7 +6,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
 require_command jq
 
-test_tmp=$(mktemp -d)
+test_tmp=$(mktemp -d 2>/dev/null || mktemp -d -p "$ROOT" .compact-test.XXXXXX)
 trap 'rm -rf "$test_tmp"' EXIT
 
 mock_bin="$test_tmp/bin"
@@ -142,6 +142,38 @@ mapfile -t calls <"$log_file"
   fail "workspace compaction ignores special workspaces" "${calls[1]}"
 [[ ${calls[1]} != *'focus'* ]] || fail "workspace compaction never dispatches focus" "${calls[1]}"
 pass "workspace compaction does not touch focus or an open scratchpad"
+
+# Destinations are reserved globally while planning: A={1,10} and B={2,9} must
+# not both be sent to 3.
+set_workspaces <<'EOF2'
+[
+  {"id":1,"name":"1","monitor":"A","windows":1,"ispersistent":false},
+  {"id":10,"name":"10","monitor":"A","windows":1,"ispersistent":false},
+  {"id":2,"name":"2","monitor":"B","windows":1,"ispersistent":false},
+  {"id":9,"name":"9","monitor":"B","windows":1,"ispersistent":false}
+]
+EOF2
+reset_log
+run_compact
+mapfile -t calls <"$log_file"
+[[ ${calls[1]} == '--batch dispatch hl.dsp.workspace.change_id({ workspace = "10", id = 3 });dispatch hl.dsp.workspace.change_id({ workspace = "9", id = 4 })' ]] ||
+  fail "workspace compaction reserves each planned destination across monitors" "${calls[1]}"
+pass "workspace compaction never plans the same destination twice"
+
+# The packing starts at the lowest occupied workspace, persistent or not.
+set_workspaces <<'EOF2'
+[
+  {"id":1,"name":"1","monitor":"eDP-1","windows":1,"ispersistent":true},
+  {"id":5,"name":"5","monitor":"eDP-1","windows":1,"ispersistent":false},
+  {"id":7,"name":"7","monitor":"eDP-1","windows":1,"ispersistent":false}
+]
+EOF2
+reset_log
+run_compact
+mapfile -t calls <"$log_file"
+[[ ${calls[1]} == '--batch dispatch hl.dsp.workspace.change_id({ workspace = "5", id = 2 });dispatch hl.dsp.workspace.change_id({ workspace = "7", id = 3 })' ]] ||
+  fail "workspace compaction starts after a leading persistent workspace" "${calls[1]}"
+pass "workspace compaction packs from the lowest occupied workspace"
 
 # An already compact state is a no-op: no batch is sent.
 set_workspaces <<'EOF'

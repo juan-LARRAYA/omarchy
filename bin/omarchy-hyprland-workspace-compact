@@ -30,9 +30,10 @@ esac
 
 # Occupied workspaces (id > 0 with windows) are packed per monitor into the
 # lowest consecutive numbering, starting from the monitor's lowest occupied
-# workspace. Hyprland workspace numbers are global, so a destination number is
-# never one that exists on another monitor, nor an empty or persistent workspace
-# of this one: those are taken, and the workspace stays where it is when no lower
+# workspace (persistent or not). Hyprland workspace numbers are global, so a
+# destination number is never one that exists on another monitor, nor an empty or
+# persistent workspace of this one, nor one already planned for another
+# workspace: those are taken, and the workspace stays where it is when no lower
 # free number is available. Persistent workspaces are anchors that keep their own
 # number. Special/scratchpad workspaces have negative ids and never participate.
 # Workspaces are renumbered in place (workspace.change_id), which keeps their
@@ -41,7 +42,7 @@ PLAN_JQ=$(cat <<'JQ'
 def next_free($taken; $start):
   if ($taken | index($start)) then next_free($taken; $start + 1) else $start end;
 
-def destinations($taken):
+def destinations($taken; $start):
   def step($ids; $next; $acc):
     if ($ids | length) == 0 then $acc
     else
@@ -50,23 +51,25 @@ def destinations($taken):
       | (if $free < $id then $free else $id end) as $dest
       | step($ids[1:]; $dest + 1; ($acc + [[$id, $dest]]))
     end;
-  step(.; .[0]; []);
+  step(.; $start; []);
 
 def plan:
   [ .[] | select((.id | type) == "number" and .id > 0) ] as $all
-  | $all
-  | group_by(.monitor)
-  | [ .[]
-      | .[0].monitor as $monitor
-      | (map(select(.windows > 0 and .ispersistent != true) | .id) | sort) as $movable
-      | ([ $all[] | select(.monitor != $monitor or (.windows == 0 or .ispersistent == true)) | .id ]) as $taken
-      | (map({ key: (.id | tostring), value: .windows }) | from_entries) as $windows
-      | [ $movable | destinations($taken)[]
+  | ($all | group_by(.monitor)) as $groups
+  | reduce $groups[] as $group ({ reserved: [], moves: [] };
+      $group[0].monitor as $monitor
+      | ($group | map(select(.windows > 0) | .id) | min) as $start
+      | ($group | map(select(.windows > 0 and .ispersistent != true) | .id) | sort) as $movable
+      | ([ $all[] | select(.monitor != $monitor or (.windows == 0 or .ispersistent == true)) | .id ]
+          + .reserved) as $taken
+      | ($group | map({ key: (.id | tostring), value: .windows }) | from_entries) as $windows
+      | ($movable | if length == 0 then [] else destinations($taken; $start) end) as $dests
+      | .reserved += [ $dests[] | .[1] ]
+      | .moves += [ $dests[]
           | select(.[0] != .[1])
           | { monitor: $monitor, source: .[0], destination: .[1],
-              windows: $windows[(.[0] | tostring)] } ]
-    ]
-  | flatten;
+              windows: $windows[(.[0] | tostring)] } ])
+  | .moves;
 
 plan
 JQ
