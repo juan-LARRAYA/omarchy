@@ -7,13 +7,16 @@ source "$(dirname "${BASH_SOURCE[0]}")/base-test.sh"
 migration="$ROOT/migrations/1791770000.sh"
 [[ -f $migration ]] || fail "the Plymouth DeviceScale migration exists"
 
-TMPDIR=$(mktemp -d)
+# TMPDIR can be read-only in sandboxes; fall back to the checkout.
+TMPDIR=$(mktemp -d 2>/dev/null || mktemp -d -p "$ROOT")
 trap 'rm -rf "$TMPDIR"' EXIT
 
 # Stub every privileged and initramfs command; the test never touches /etc.
 stub_bin="$TMPDIR/bin"
 mkdir -p "$stub_bin"
 rebuild_log="$TMPDIR/rebuilds"
+images="$TMPDIR/boot"
+mkdir -p "$images"
 cat >"$stub_bin/sudo" <<'STUB'
 #!/bin/bash
 exec "$@"
@@ -25,18 +28,20 @@ STUB
 cat >"$stub_bin/limine-mkinitcpio" <<STUB
 #!/bin/bash
 echo limine >>"$rebuild_log"
+[[ \${NO_IMAGE:-0} == 1 ]] || echo image >"$images/initramfs.img"
 [[ \${FAIL_REBUILD:-0} == 0 ]]
 STUB
 cat >"$stub_bin/mkinitcpio" <<STUB
 #!/bin/bash
 echo "mkinitcpio \$*" >>"$rebuild_log"
+[[ \${NO_IMAGE:-0} == 1 ]] || echo image >"$images/initramfs.img"
 [[ \${FAIL_REBUILD:-0} == 0 ]]
 STUB
 chmod +x "$stub_bin"/*
 
 conf="$TMPDIR/plymouthd.conf"
 run_migration() {
-  PATH="$stub_bin:$PATH" OMARCHY_PLYMOUTHD_CONF="$conf" bash -euo pipefail "$migration" >/dev/null
+  PATH="$stub_bin:$PATH" OMARCHY_PLYMOUTHD_CONF="$conf" OMARCHY_BOOT_IMAGE_DIRS="$images" bash -euo pipefail "$migration" >/dev/null
 }
 rebuilds() { [[ -f $rebuild_log ]] && wc -l <"$rebuild_log" || echo 0; }
 
@@ -81,3 +86,19 @@ pass "a failed rebuild is retried"
 HAVE_LIMINE=0 run_migration || fail "the mkinitcpio fallback succeeds"
 grep -qx 'mkinitcpio -P' "$rebuild_log" || fail "the fallback runs mkinitcpio -P" "$(cat "$rebuild_log")"
 pass "mkinitcpio -P is the fallback"
+
+# limine-mkinitcpio exits 0 without writing an image: the migration must fail
+# and a later run with a working rebuild must succeed
+printf '[Daemon]\nTheme=omarchy\n' >"$conf"
+rm -f "$images"/*
+NO_IMAGE=1 run_migration && fail "a rebuild that wrote no image fails the migration"
+run_migration || fail "the retry succeeds once an image is written"
+[[ -f $images/initramfs.img ]] || fail "the retry produced the image"
+pass "a rebuild that exits 0 without an image is not accepted"
+
+# DeviceScale in another section does not count
+printf '[Other]\nDeviceScale=2\n[Daemon]\nTheme=omarchy\n' >"$conf"
+run_migration || fail "the migration handles DeviceScale in another section"
+awk '/^\[Daemon\]/{d=1;next} /^\[/{d=0} d&&/^DeviceScale=1$/{f=1} END{exit !f}' "$conf" ||
+  fail "DeviceScale=1 is added to [Daemon] despite one in another section" "$(cat "$conf")"
+pass "only a DeviceScale in [Daemon] counts"
