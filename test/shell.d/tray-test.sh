@@ -30,5 +30,5 @@ const fs = require('fs')
 const src = fs.readFileSync(path.join(root, 'shell/plugins/bar/widgets/Tray.qml'), 'utf8')
 const image = src.match(/Image \{\s*id: trayIconImage[\s\S]*?\n    \}/)
 assert(image, 'tray icon image block exists')
-assert(/layer\.enabled: true\b/.test(image[0]), 'tray icon layer stays enabled so the tinted effect survives an attention-icon cycle')
+assert(/^\s*layer\.enabled:\s*true\s*$/m.test(image[0]), 'tray icon layer stays enabled so the tinted effect survives an attention-icon cycle')
 JS
