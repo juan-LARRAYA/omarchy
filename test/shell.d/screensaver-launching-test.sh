@@ -69,6 +69,7 @@ kill "$(<"$tmpdir/socat.pid")" 2>/dev/null || true
 
 # An interrupted launcher must not leave the marker behind.
 touch "$tmpdir/never-map"
+rm -f "$tmpdir/marker-seen-at-spawn"
 PATH="$tmpdir/bin:$PATH" TEST_DIR="$tmpdir" XDG_RUNTIME_DIR="$tmpdir" HYPRLAND_INSTANCE_SIGNATURE=test \
   "$ROOT/bin/omarchy-launch-screensaver" force &
 launcher_pid=$!
@@ -76,7 +77,7 @@ for (( attempt = 0; attempt < 100; attempt++ )); do
   [[ -e $tmpdir/marker-seen-at-spawn && -e $marker ]] && break
   sleep 0.05
 done
-[[ -e $marker ]] || fail "the launcher is waiting on a window with its marker set" "no marker"
+[[ -e $tmpdir/marker-seen-at-spawn && -e $marker ]] || fail "the launcher is waiting on a window with its marker set" "no spawn with the marker set"
 kill -TERM "$launcher_pid"
 wait "$launcher_pid" 2>/dev/null || true
 launcher_pid=
